@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>中文 TTS 测试台</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --line:#e3e6ec; --ink:#1c2024; --muted:#6b7280;
+    --brand:#2b6cb0; --brand-d:#1e4e80; --ok:#0f7b46; --err:#b42318; --warn:#b54708;
+    --radius:12px;
+  }
+  *{box-sizing:border-box;min-width:0}
+  html,body{overflow-x:hidden;max-width:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.6 -apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+  header{background:var(--card);border-bottom:1px solid var(--line);padding:14px 20px;
+         display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
+  header h1{font-size:17px;margin:0;font-weight:650}
+  .pill{font-size:12px;padding:3px 9px;border-radius:999px;background:#eef2f7;color:var(--muted)}
+  .pill.ok{background:#e6f5ec;color:var(--ok)}
+  .pill.err{background:#fdecea;color:var(--err)}
+  main{max-width:1320px;margin:0 auto;padding:20px;display:grid;gap:18px;
+       grid-template-columns:minmax(0,1fr);align-items:start}
+  @media(min-width:960px){ main{grid-template-columns:minmax(0,1fr) minmax(0,1.05fr)} }
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+        padding:18px;min-width:0;max-width:100%}
+  .card h2{font-size:14px;margin:0 0 14px;font-weight:650;color:var(--muted);
+           letter-spacing:.03em;text-transform:uppercase}
+  label{display:block;font-size:13px;color:var(--muted);margin:12px 0 5px}
+  label:first-of-type{margin-top:0}
+  textarea,select,input[type=text]{width:100%;padding:9px 11px;border:1px solid var(--line);
+        border-radius:9px;font:inherit;background:#fff;color:var(--ink)}
+  textarea{min-height:130px;resize:vertical;line-height:1.7}
+  textarea:focus,select:focus,input:focus{outline:2px solid #cfe0f3;border-color:var(--brand)}
+  .row{display:flex;gap:10px}
+  .row>*{flex:1;min-width:0}
+  .btns{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center}
+  button{font:inherit;font-weight:600;border:0;border-radius:9px;padding:10px 18px;
+         cursor:pointer;background:var(--brand);color:#fff}
+  button:hover{background:var(--brand-d)}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  button.ghost{background:#eef2f7;color:var(--ink)}
+  button.ghost:hover{background:#e2e8f0}
+  .meta{font-size:13px;color:var(--muted);margin-left:auto}
+  .char{font-size:12px;color:var(--muted);text-align:right;margin-top:4px}
+  .char.over{color:var(--err);font-weight:600}
+  audio{width:100%;margin-top:12px}
+  .kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:10px;margin-top:14px}
+  .kv div{background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:9px 11px}
+  .kv b{display:block;font-size:16px;font-weight:650}
+  .kv span{font-size:11px;color:var(--muted)}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .stats div{background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+  .stats b{display:block;font-size:15px;font-weight:650;line-height:1.3}
+  .stats span{font-size:11px;color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed}
+  th,td{text-align:left;padding:7px 5px;border-bottom:1px solid var(--line);vertical-align:middle;
+        overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  th:nth-child(1),td:nth-child(1){width:62px}
+  th:nth-child(2),td:nth-child(2){width:94px}
+  th:nth-child(3),td:nth-child(3){width:66px}
+  th:nth-child(4),td:nth-child(4){width:auto}
+  th:nth-child(5),td:nth-child(5){width:44px}
+  th:nth-child(6),td:nth-child(6){width:46px}
+  th:nth-child(7),td:nth-child(7){width:56px}
+  th:nth-child(8),td:nth-child(8){width:44px}
+  th{font-weight:600;color:var(--muted);font-size:12px;white-space:nowrap}
+  td.txt{max-width:none}
+  .tag{font-size:11px;padding:2px 7px;border-radius:6px;background:#e6f5ec;color:var(--ok)}
+  .tag.e{background:#fdecea;color:var(--err)}
+  .mini{font-size:12px;padding:4px 9px;border-radius:7px;background:#eef2f7;color:var(--brand);
+        border:0;cursor:pointer;font-weight:600}
+  .mini:hover{background:#dfe8f2}
+  .flexline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .hint{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.6}
+  .scroll{max-height:520px;overflow:auto;max-width:100%}
+  code{background:#f1f3f6;padding:1px 5px;border-radius:5px;font-size:12px}
+  .err{color:var(--err);font-size:13px;margin-top:10px;white-space:pre-wrap}
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid #fff6;
+        border-top-color:#fff;border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  @media(max-width:600px){
+    main{padding:12px;gap:12px}
+    .card{padding:14px}
+    .row{flex-direction:column;gap:0}
+    .row>*{width:100%}
+    .stats{grid-template-columns:repeat(3,1fr);gap:6px}
+    .stats div{padding:7px 8px}
+    .stats b{font-size:13px}
+    .kv{grid-template-columns:repeat(3,1fr)}
+    th:nth-child(2),td:nth-child(2),th:nth-child(5),td:nth-child(5){display:none}
+    th:nth-child(1),td:nth-child(1){width:48px}
+    th:nth-child(3),td:nth-child(3){width:58px}
+    th:nth-child(6),td:nth-child(6){width:42px}
+    th:nth-child(7),td:nth-child(7){width:48px}
+    th:nth-child(8),td:nth-child(8){width:42px}
+    header{padding:10px 12px;gap:8px}
+    header h1{font-size:15px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>内网中文 TTS 测试台</h1>
+  <span class="pill" id="healthPill">检查中…</span>
+  <span class="pill" id="modelPill">—</span>
+</header>
+
+<main>
+  <!-- ============ 左：合成 ============ -->
+  <section class="card">
+    <h2>合成</h2>
+
+    <div class="row">
+      <div>
+        <label>模型</label>
+        <select id="model"></select>
+      </div>
+      <div>
+        <label>音色</label>
+        <select id="voice"></select>
+      </div>
+    </div>
+
+    <label>语气 / 情绪指令（instinct，可留空）</label>
+    <div class="row" style="margin-bottom:6px">
+      <select id="preset" style="flex:2">
+        <option value="">— 选择预设 —</option>
+        <option value="用自然、富有感情的播音语气朗读，语调有起伏">自然播音</option>
+        <option value="用沉稳、有感情的播音语气朗读，注意人物对话的情绪变化">沉稳叙述（有声书）</option>
+        <option value="用平静、从容的语气朗读">平静</option>
+        <option value="用悲伤、低沉、落寞的语气说">悲伤</option>
+        <option value="用愤怒、激动、争辩的语气说">愤怒</option>
+        <option value="用兴奋、高声、急促的语气说">兴奋</option>
+        <option value="用温柔、亲切的语气朗读">温柔</option>
+      </select>
+      <button class="ghost" style="flex:0 0 auto" onclick="document.getElementById('instruct').value=''">清空</button>
+    </div>
+    <input type="text" id="instruct" placeholder="留空则使用模型默认语气">
+
+    <label>语速 <span id="speedVal" style="color:var(--ink);font-weight:600">1.0</span>×</label>
+    <input type="range" id="speed" min="0.6" max="1.6" step="0.05" value="1.0" style="width:100%">
+
+    <label>文本（上限 <span id="maxChars">1000</span> 字）</label>
+    <textarea id="text">孔乙己是站着喝酒而穿长衫的唯一的人。他身材很高大；青白脸色，皱纹间时常夹些伤痕；一部乱蓬蓬的花白的胡子。</textarea>
+    <div class="char" id="charCount">0 字</div>
+
+    <div class="btns">
+      <button id="go">合成语音</button>
+      <a id="dl" style="display:none"><button class="ghost" type="button">下载音频</button></a>
+      <span class="meta" id="status"></span>
+    </div>
+    <div class="err" id="errBox"></div>
+
+    <audio id="player" controls style="display:none"></audio>
+    <div class="kv" id="result" style="display:none"></div>
+    <div class="hint">
+      接口：<code>POST /v1/audio/speech</code>（OpenAI 兼容）。
+      中文必须传 <code>lang_code:"zh"</code>，否则会按英文处理。
+    </div>
+  </section>
+
+  <!-- ============ 右：统计 + 历史 ============ -->
+  <section class="card">
+    <h2>服务统计</h2>
+    <div class="stats" id="stats"></div>
+
+    <h2 style="margin-top:22px">调用日志</h2>
+    <div class="flexline">
+      <input type="text" id="q" placeholder="搜索文本 / 音色 / IP" style="flex:1;min-width:130px">
+      <select id="fstatus" style="flex:0 0 110px">
+        <option value="">全部状态</option>
+        <option value="ok">仅成功</option>
+        <option value="error">仅失败</option>
+      </select>
+      <button class="mini" onclick="loadLogs()">刷新</button>
+      <label style="margin:0;font-size:12px;display:flex;gap:5px;align-items:center">
+        <input type="checkbox" id="auto" checked style="width:auto"> 自动
+      </label>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr>
+          <th>时间</th><th>来源</th><th>音色</th><th>文本</th>
+          <th>时长</th><th>RTF</th><th>状态</th><th></th>
+        </tr></thead>
+        <tbody id="logs"><tr><td colspan="8" style="color:var(--muted)">加载中…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="hint" id="logMeta"></div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let MAX = 1000;
+
+async function jget(u){ const r = await fetch(u); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+
+async function boot(){
+  // 健康
+  try{
+    const h = await jget('/health');
+    $('healthPill').textContent = '服务正常';
+    $('healthPill').className = 'pill ok';
+    $('modelPill').textContent = '已加载 ' + (h.loaded.length ? h.loaded.length : 0) + ' 个模型';
+  }catch(e){
+    $('healthPill').textContent = '服务异常'; $('healthPill').className='pill err';
+  }
+  // 模型
+  const m = await jget('/api/models');
+  $('model').innerHTML = m.data.map(x=>
+    `<option value="${x.id}" ${x.default?'selected':''}>${x.id}${x.default?'（默认）':''}</option>`).join('');
+  await loadVoices();
+  // 统计参数
+  try{ const s = await jget('/api/stats'); MAX = s.max_chars || 1000; }catch(e){}
+  $('maxChars').textContent = MAX;
+  await Promise.all([loadStats(), loadLogs()]);
+  setInterval(()=>{ if($('auto').checked){ loadStats(); loadLogs(); } }, 5000);
+}
+
+async function loadVoices(){
+  const v = await jget('/api/voices?model=' + encodeURIComponent($('model').value));
+  $('voice').innerHTML = v.data.map(x=>
+    `<option value="${x.id}">${x.id} — ${x.description}</option>`).join('');
+  // 默认选叙述男声
+  const pref = v.data.find(x=>x.id==='Uncle_Fu');
+  if(pref) $('voice').value = 'Uncle_Fu';
+}
+
+function updateCount(){
+  const n = $('text').value.length;
+  $('charCount').textContent = n + ' 字';
+  $('charCount').className = 'char' + (n > MAX ? ' over' : '');
+}
+
+async function loadStats(){
+  try{
+    const s = await jget('/api/stats');
+    $('stats').innerHTML = [
+      ['调用', s.calls], ['成功', s.ok], ['失败', s.errors],
+      ['音频分钟', s.audio_minutes], ['平均RTF', s.overall_rtf ?? '—'],
+      ['产出MB', s.bytes_mb]
+    ].map(([k,v])=>`<div><b>${v}</b><span>${k}</span></div>`).join('');
+  }catch(e){}
+}
+
+async function loadLogs(){
+  const p = new URLSearchParams({limit:50, offset:0});
+  if($('q').value.trim()) p.set('q', $('q').value.trim());
+  if($('fstatus').value) p.set('status', $('fstatus').value);
+  try{
+    const r = await jget('/api/logs?' + p);
+    if(!r.data.length){
+      $('logs').innerHTML = '<tr><td colspan="8" style="color:var(--muted)">还没有调用记录</td></tr>';
+    } else {
+      $('logs').innerHTML = r.data.map(x=>{
+        const ok = x.status === 'ok';
+        const full = (x.ts||'').replace('T',' ');
+        const narrow = window.innerWidth < 600;
+        const t = narrow ? (full.slice(11,16) || full.slice(5,10)) : (full.slice(11,19) || full.slice(5,10));
+        const txt = (x.text||'').replace(/[<>&]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+        const aud = ok && x.file
+          ? `<button class="mini" onclick="play(${x.id})">播放</button>` : '';
+        const errTip = ok ? '' : (x.error||'').replace(/"/g,'&quot;');
+        return `<tr>
+          <td title="${full}">${t}</td>
+          <td>${x.client_ip||''}</td>
+          <td>${x.voice||''}</td>
+          <td class="txt" title="${txt.replace(/"/g,'&quot;')}">${txt}</td>
+          <td>${x.audio_s != null ? x.audio_s.toFixed(1)+'s' : '—'}</td>
+          <td>${x.rtf != null ? x.rtf : '—'}</td>
+          <td title="${errTip}"><span class="tag ${ok?'':'e'}">${ok?'成功':'失败'}</span></td>
+          <td>${aud}</td>
+        </tr>`;
+      }).join('');
+    }
+    $('logMeta').textContent = `共 ${r.total} 条，显示最近 ${r.data.length} 条（每 5 秒自动刷新）`;
+  }catch(e){
+    $('logs').innerHTML = `<tr><td colspan="8" style="color:var(--err)">日志加载失败：${e.message}</td></tr>`;
+  }
+}
+
+function play(id){
+  $('player').src = '/audio/' + id;
+  $('player').style.display = 'block';
+  $('player').play().catch(()=>{});
+  $('player').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+async function generate(){
+  const text = $('text').value.trim();
+  $('errBox').textContent = '';
+  if(!text){ $('errBox').textContent = '请输入文本'; return; }
+  if(text.length > MAX){ $('errBox').textContent = `文本 ${text.length} 字，超过上限 ${MAX} 字，请分段`; return; }
+
+  $('go').disabled = true;
+  $('go').innerHTML = '<span class="spin"></span> 合成中…';
+  $('status').textContent = '';
+  const t0 = performance.now();
+
+  try{
+    const body = {
+      model: $('model').value,
+      input: text,
+      voice: $('voice').value,
+      lang_code: $('model').value.includes('kokoro') ? 'z' : 'zh',
+      speed: parseFloat($('speed').value),
+      response_format: 'wav'
+    };
+    const ins = $('instruct').value.trim();
+    if(ins) body.instruct = ins;
+
+    const r = await fetch('/v1/audio/speech', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    if(!r.ok){
+      let msg = await r.text();
+      try{ msg = JSON.parse(msg).detail || msg; }catch(e){}
+      throw new Error(msg);
+    }
+    const wall = (performance.now() - t0) / 1000;
+    const audioS = parseFloat(r.headers.get('X-Audio-Seconds') || '0');
+    const rtf = r.headers.get('X-RTF') || '—';
+    const callId = r.headers.get('X-Call-Id');
+
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    $('player').src = url;
+    $('player').style.display = 'block';
+    $('player').play().catch(()=>{});
+    $('dl').href = url; $('dl').download = `tts-${callId}.wav`; $('dl').style.display = 'inline';
+
+    $('result').style.display = 'grid';
+    $('result').innerHTML = [
+      ['音频时长', audioS.toFixed(2)+'s'], ['合成耗时', wall.toFixed(2)+'s'],
+      ['RTF', rtf], ['采样率', '24 kHz'], ['调用ID', callId||'—']
+    ].map(([k,v])=>`<div><b>${v}</b><span>${k}</span></div>`).join('');
+    $('status').textContent = '完成';
+    loadStats(); loadLogs();
+  }catch(e){
+    $('errBox').textContent = '合成失败：' + e.message;
+  }finally{
+    $('go').disabled = false;
+    $('go').textContent = '合成语音';
+  }
+}
+
+// ---- 事件绑定 ----
+$('go').onclick = generate;
+$('text').addEventListener('input', updateCount);
+$('speed').addEventListener('input', e => $('speedVal').textContent = e.target.value);
+$('model').addEventListener('change', loadVoices);
+$('preset').addEventListener('change', e => {
+  if(e.target.value) $('instruct').value = e.target.value;
+});
+$('q').addEventListener('keydown', e => { if(e.key==='Enter') loadLogs(); });
+$('fstatus').addEventListener('change', loadLogs);
+document.addEventListener('keydown', e=>{
+  if((e.metaKey||e.ctrlKey) && e.key==='Enter'){ e.preventDefault(); generate(); }
+});
+
+boot();
+updateCount();
+</script>
+</body>
+</html>

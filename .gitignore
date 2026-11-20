@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# 运行时产物（首次启动自动生成，请勿提交）
+service/calls.db*
+service/outputs/
+logs/
+audio/
+.hf/
+
+# 系统与编辑器
+.DS_Store
+*.swp
+.idea/
+.vscode/
