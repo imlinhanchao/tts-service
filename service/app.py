@@ -4,6 +4,8 @@
 在 mlx-audio (MLX/Metal) 之上提供 OpenAI 兼容的 /v1/audio/speech 接口，
 附带 SQLite 调用日志与浏览器测试界面。
 本地模型（Qwen3-TTS / Kokoro）全程离线；聚合的 edge-tts 需要联网。
+无法运行 MLX 的环境（Linux/Windows/Intel Mac，或 TTS_EDGE_ONLY=1）自动降级为
+edge-only 模式：仅提供 Edge TTS，默认模型切为 edge-tts。
 
 首次部署：bash scripts/setup.sh
 启动：    bash service/start.sh
@@ -46,13 +48,30 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 TZ = timezone(timedelta(hours=8))          # Asia/Shanghai
 MAX_CHARS = int(os.environ.get("TTS_MAX_CHARS", "1000"))
 
+# ---- 本地模型可用性：MLX 仅 Apple Silicon Mac 可跑，其余环境自动降级 --------
+def _local_models_available() -> bool:
+    """能否加载本地 MLX 模型；TTS_EDGE_ONLY=1 可强制关闭（只跑在线 Edge TTS）。"""
+    if os.environ.get("TTS_EDGE_ONLY", "").strip().lower() in ("1", "true", "yes", "on"):
+        return False
+    try:
+        import mlx.core as mx          # noqa: F401
+        import mlx_audio               # noqa: F401
+        mx.array([1])                 # 提前暴露 Metal 设备缺失等运行时问题
+        return True
+    except Exception:
+        return False
+
+
+LOCAL_OK = _local_models_available()
+
 # 服务对外可用的模型别名 -> HF 仓库
 MODELS = {
     "qwen3-tts-0.6b": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit",
     "qwen3-tts-1.7b": "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
     "kokoro-82m": "mlx-community/Kokoro-82M-4bit",
 }
-DEFAULT_MODEL = "qwen3-tts-0.6b"
+# edge-only 模式下默认模型切到 edge-tts，保证"不传 model 也能用"
+DEFAULT_MODEL = "qwen3-tts-0.6b" if LOCAL_OK else "edge-tts"
 
 # Qwen3 的中文母语音色；Dylan=北京口音, Eric=四川口音
 QWEN_VOICES = {
@@ -93,8 +112,9 @@ def is_edge_model(name: str) -> bool:
     return (name or "").strip().lower() in ("edge-tts", "edge", "edge_tts", "edgetts")
 
 
-app = FastAPI(title="内网中文 TTS 服务", version="1.2",
-              description="聚合服务：Qwen3-TTS / Kokoro（本地 MLX）+ Edge TTS（在线）")
+app = FastAPI(title="内网中文 TTS 服务", version="1.3",
+              description="聚合服务：Qwen3-TTS / Kokoro（本地 MLX）+ Edge TTS（在线）；"
+                          "无法运行 MLX 的环境自动降级为 edge-only 模式")
 
 # ---- 全局状态 -----------------------------------------------------------
 _model_lock = threading.Lock()          # MLX 生成不是线程安全的，串行化
@@ -329,7 +349,9 @@ def health():
     with _queue_lock:
         waiting = _queue_waiting
     return {"status": "ok", "version": app.version,
-            "models": list(MODELS) + [EDGE_MODEL], "loaded": loaded_models(),
+            "mode": "full" if LOCAL_OK else "edge-only",
+            "models": (list(MODELS) if LOCAL_OK else []) + [EDGE_MODEL],
+            "loaded": loaded_models(),
             "busy": _model_lock.locked(), "waiting": waiting,
             "last_rtf": _last_rtf, "max_chars": MAX_CHARS}
 
@@ -347,6 +369,8 @@ def api_queue():
 @app.post("/api/warmup")
 def api_warmup(payload: Optional[dict] = None):
     """预加载模型，避免批处理第一个请求等冷启动。"""
+    if not LOCAL_OK:
+        raise HTTPException(503, "edge-only 模式下没有本地模型可预热，合成请直接用 model=\"edge-tts\"")
     target = (payload or {}).get("model") or DEFAULT_MODEL
     t0 = time.time()
     try:
@@ -361,13 +385,16 @@ def api_warmup(payload: Optional[dict] = None):
 
 @app.get("/api/models")
 def api_models():
-    data = [
-        {"id": a, "repo": r, "default": a == DEFAULT_MODEL,
-         "voices": list(KOKORO_VOICES) if "kokoro" in r.lower() else list(QWEN_VOICES)}
-        for a, r in MODELS.items()]
-    data.append({"id": EDGE_MODEL, "repo": "edge-tts", "default": False,
+    data = []
+    if LOCAL_OK:
+        data = [
+            {"id": a, "repo": r, "default": a == DEFAULT_MODEL,
+             "voices": list(KOKORO_VOICES) if "kokoro" in r.lower() else list(QWEN_VOICES)}
+            for a, r in MODELS.items()]
+    data.append({"id": EDGE_MODEL, "repo": "edge-tts",
+                 "default": EDGE_MODEL == DEFAULT_MODEL,
                  "provider": "edge", "voices": list(EDGE_VOICES)})
-    return {"data": data}
+    return {"data": data, "mode": "full" if LOCAL_OK else "edge-only"}
 
 
 @app.get("/api/voices")
@@ -425,6 +452,11 @@ def speech(payload: SpeechRequest, request: Request):
                      error=f"Edge TTS 失败: {type(e).__name__}: {e}")
             raise HTTPException(502, f"Edge TTS 失败: {type(e).__name__}: {e}")
     else:
+        if not LOCAL_OK:
+            msg = ("本地模型不可用：当前环境无法加载 MLX（仅 Apple Silicon Mac 支持）。"
+                   "请改用 model=\"edge-tts\"（在线），或在支持的机器上部署。")
+            log_call(**base, status="error", http_status=503, error=msg)
+            raise HTTPException(503, msg)
         try:
             repo, model = get_model(payload.model)
         except Exception as e:

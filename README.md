@@ -15,16 +15,17 @@
 - **调用日志**：文本、耗时、RTF、峰值内存全部入库，按 `X-Call-Id` 可回放当时的音频
 - **词级时间戳**：Edge TTS 专属接口，返回逐词起止时间，可直接做字幕
 - **队列语义**：MLX 生成串行化，`X-Queue-Seconds` / `/api/queue` 让调用方感知排队
+- **跨平台降级**：无法运行 MLX 的环境（Linux / Windows / Intel Mac）自动降级为 edge-only 模式——只提供在线 Edge TTS，接口、日志、Web 界面照常可用
 
 ## 系统要求
 
 | 项 | 要求 |
 |---|---|
-| 硬件 | Mac（Apple Silicon M1 及以上）。**Linux / Windows / Intel Mac 无法运行本地模型**（MLX 依赖 Metal GPU） |
+| 硬件 | 本地模型需要 Mac（Apple Silicon M1 及以上）；**其它环境（Linux / Windows / Intel Mac）自动降级为 edge-only 模式**，只提供在线 Edge TTS，接口与日志功能不变 |
 | 系统 | macOS（实测 26.0.1 / Mac mini M4 16GB） |
 | Python | ≥ 3.10（实测 3.14.3） |
 | ffmpeg | 输出 mp3 时需要（`brew install ffmpeg`）；wav / flac 不需要 |
-| 网络 | 首次运行自动从 HuggingFace 下载模型（默认模型约 2.0 GB）；`edge-tts` 需联网 |
+| 网络 | full 模式：首次运行自动从 HuggingFace 下载模型（默认模型约 2.0 GB）；edge-only 模式：能访问互联网即可（Edge TTS 为必需） |
 | 磁盘 | 每个模型 0.3–3.1 GB，缓存在项目内 `./.hf/` |
 
 > 国内网络建议先设置镜像再启动：`export HF_ENDPOINT=https://hf-mirror.com`
@@ -53,6 +54,24 @@ PORT=9000 bash service/start.sh
 HOST=127.0.0.1 bash service/start.sh
 ```
 
+## 运行模式（自动检测）
+
+服务启动时自动检测当前环境能否加载 MLX。两种模式对外行为一致，只差模型范围：
+
+| | full | edge-only |
+|---|---|---|
+| 触发条件 | Apple Silicon Mac 且 mlx-audio 可用（默认） | 其它平台自动降级；或 `TTS_EDGE_ONLY=1` 在任意平台强制 |
+| 可用模型 | qwen3 / kokoro + edge-tts | 仅 `edge-tts` |
+| 默认 `model` | `qwen3-tts-0.6b` | `edge-tts`（不传 `model` 也能直接用） |
+| 请求本地模型 | 正常合成 | `503`，附中文说明（指引改用 `model="edge-tts"`） |
+| 查看方式 | `/health` 返回 `"mode": "full"` | `/health` 返回 `"mode": "edge-only"`；`/api/models` 只列 `edge-tts` |
+
+强制只跑 Edge（省内存，或明确不想用本地模型）：
+
+```bash
+TTS_EDGE_ONLY=1 bash service/start.sh
+```
+
 ## API 接口（OpenAI 兼容）
 
 ### 语音合成 `POST /v1/audio/speech`
@@ -60,7 +79,7 @@ HOST=127.0.0.1 bash service/start.sh
 | 参数 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
 | `input` | string | ✅ | — | 要合成的文本，上限 1000 字（`TTS_MAX_CHARS` 可调） |
-| `model` | string | | `qwen3-tts-0.6b` | `qwen3-tts-0.6b` / `qwen3-tts-1.7b` / `kokoro-82m` / `edge-tts` |
+| `model` | string | | `qwen3-tts-0.6b`（edge-only 模式为 `edge-tts`） | `qwen3-tts-0.6b` / `qwen3-tts-1.7b` / `kokoro-82m` / `edge-tts` |
 | `voice` | string | | `Uncle_Fu`（Qwen）/ `zf_xiaobei`（Kokoro）/ `zh-CN-XiaoxiaoNeural`（Edge） | 音色名，见音色表 |
 | `lang_code` | string | | `zh`（Qwen）/ `z`（Kokoro） | 中文合成保持默认即可，Edge 忽略此参数 |
 | `instruct` | string | | 空 | 自然语言语气指令（仅本地 Qwen 模型生效） |
@@ -172,11 +191,11 @@ word_count, words: [{text, start, end}, ...], audio_base64}`。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `GET` | `/health` | 健康检查：版本、可用模型、已加载模型、队列状态 |
-| `GET` | `/api/models` | 模型列表（含各自音色） |
+| `GET` | `/health` | 健康检查：版本、运行模式（`mode: full / edge-only`）、可用模型、队列状态 |
+| `GET` | `/api/models` | 模型列表（含各自音色；edge-only 模式下只列 `edge-tts`） |
 | `GET` | `/api/voices?model=...` | 音色列表（含中文描述） |
 | `GET` | `/api/queue` | 队列状态：`busy` / `waiting` / `loaded` / `last_rtf` |
-| `POST` | `/api/warmup` | 预加载模型，body `{"model": "qwen3-tts-1.7b"}`，返回 `load_seconds` |
+| `POST` | `/api/warmup` | 预加载模型，body `{"model": "qwen3-tts-1.7b"}`，返回 `load_seconds`（edge-only 模式返回 503） |
 | `GET` | `/api/logs?limit=50&offset=0&q=关键词&status=ok` | 查询调用日志 |
 | `GET` | `/api/stats` | 汇总统计（总分钟数、平均 RTF、Top 音色/模型） |
 | `GET` | `/audio/{id}` | 按日志 ID 取回当时生成的音频 |
@@ -196,6 +215,7 @@ word_count, words: [{text, start, end}, ...], audio_base64}`。
 
 模型按需加载，首次使用某模型有几秒加载延迟，之后常驻内存。
 三个本地模型同时加载约 6.4 GB，16GB 内存机器可承受但不建议。
+edge-only 模式下本地模型一律不可用（请求返回 503 并附说明），上表仅 `edge-tts` 可用。
 
 ### Qwen3-TTS 音色
 
@@ -299,6 +319,7 @@ find service/outputs -type f -mtime +30 -delete
 | `TTS_MAX_CHARS` | `1000` | 单次请求文本上限 |
 | `HF_HOME` | `./.hf` | 模型缓存目录（保持在项目内，避免 `~/.cache` 权限问题） |
 | `HF_ENDPOINT` | 官方地址 | HuggingFace 镜像（国内建议 `https://hf-mirror.com`） |
+| `TTS_EDGE_ONLY` | 自动检测 | 设为 `1` 强制 edge-only 模式：仅提供 Edge TTS，默认模型切为 `edge-tts` |
 
 ## 开机自启（launchd）
 
@@ -308,6 +329,7 @@ find service/outputs -type f -mtime +30 -delete
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
+| `/health` 显示 `edge-only`，本地模型 503 | 当前环境无法加载 MLX（非 Apple Silicon Mac，或缺 mlx-audio） | 只用 Edge TTS 即可；需要本地模型请在 Apple Silicon Mac 上部署（Mac 上先重跑 `bash scripts/setup.sh`） |
 | 局域网打不开页面 | 服务没起 / 端口不对 / 防火墙 | 本机先测 `curl http://127.0.0.1:8123/health`；检查 macOS 防火墙设置 |
 | 中文读成英文或读音怪 | 漏传 `lang_code` | 显式传 `lang_code: "zh"`（Qwen） |
 | 返回 413 | 文本超上限 | 分段调用，或 `TTS_MAX_CHARS=2000 bash service/start.sh` |
@@ -383,3 +405,6 @@ tts-service/
 - **v1.2** Edge TTS 聚合：`edge-tts` 模型、14 个中文音色、`/v1/audio/speech/timings` 词级时间戳
 - **v1.2.1** 修复 SQLite 连接泄漏：`db()` 改为 contextmanager，逐请求关闭连接
   （此前连续调用后会累积文件描述符，导致 `unable to open database file`）
+- **v1.3** 跨平台降级：启动时自动检测 MLX 可用性，不支持的环境以 edge-only 模式运行——
+  `/health` 增加 `mode` 字段、`/api/models` 只列可用模型、本地模型请求返回 503 带指引、
+  默认模型随模式切换；依赖改用平台标记，`setup.sh` 在任意平台可跑（`TTS_EDGE_ONLY=1` 可强制降级）

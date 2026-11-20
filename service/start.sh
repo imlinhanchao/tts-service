@@ -24,10 +24,14 @@ if [ ! -x "$PY" ]; then
 fi
 
 # 依赖自检：setup.sh 之外启动时给出明确提示，而不是运行时装一半
-if ! "$PY" -c "import fastapi, uvicorn, edge_tts, mlx.core, mlx_audio" >/dev/null 2>&1; then
-  echo "缺少服务依赖（fastapi / uvicorn / edge-tts / mlx-audio）"
+if ! "$PY" -c "import fastapi, uvicorn, edge_tts, soundfile" >/dev/null 2>&1; then
+  echo "缺少核心依赖（fastapi / uvicorn / edge-tts / soundfile）"
   echo "请先执行： bash scripts/setup.sh"
   exit 1
+fi
+# 本地模型依赖缺失时自动降级为 edge-only（服务内也会检测，这里只是提前告知）
+if ! "$PY" -c "import mlx.core, mlx_audio" >/dev/null 2>&1; then
+  echo "提示：未检测到 mlx-audio，本地模型不可用，将以 edge-only 模式运行（需联网）"
 fi
 
 LAN_IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo '本机IP')"

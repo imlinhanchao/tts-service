@@ -1,10 +1,12 @@
-# 运行环境：macOS + Apple Silicon（MLX 依赖 Metal GPU）；Python >= 3.10
-# 以下版本为实测可用组合（macOS 26.0.1 / Mac mini M4 / Python 3.14.3）
-mlx-audio==0.6.6
+# 运行环境：任意平台可跑 Edge TTS（edge-only 模式，需联网）；
+# 本地模型需要 macOS + Apple Silicon（MLX 依赖 Metal GPU）。
+# Python >= 3.10（实测 3.14.3），版本为实测可用组合。
+# 带 darwin+arm64 环境标记的依赖，pip 在其它平台会自动跳过。
+mlx-audio==0.6.6; sys_platform == "darwin" and platform_machine == "arm64"
+soxr==1.1.0; sys_platform == "darwin" and platform_machine == "arm64"
+misaki[zh]==0.7.4; sys_platform == "darwin" and platform_machine == "arm64"
+opencc-python-reimplemented==0.1.7; sys_platform == "darwin" and platform_machine == "arm64"
 soundfile==0.14.0
-soxr==1.1.0
-misaki[zh]==0.7.4
-opencc-python-reimplemented==0.1.7
 fastapi==0.165.0
 uvicorn[standard]==0.54.0
 edge-tts==7.3.1
